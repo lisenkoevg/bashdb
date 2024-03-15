@@ -1,6 +1,5 @@
 # After each line of the test script is executed the shell traps to
 # this function.
-
 function _steptrap
 {
   _curline=$1
@@ -32,7 +31,6 @@ function _steptrap
 }
 
 # The Debugger Command loop
-
 function _cmdloop
 {
   local cmd args
@@ -46,7 +44,7 @@ function _cmdloop
       g ) return ;;                         # "go": start/resume execution of the script
       q ) exit ;;                           # quit
       s ) let _steps=${args:-1}             # single step N times (default = 1)
-          return ;;
+          _is_steps_valid && return ;;
       x ) _xtrace ;;                        # toggle execution trace
       !* ) eval ${cmd#!} $args ;;           # pass to the shell
       * ) _msg "Invalid command: '$cmd'" ;;
@@ -55,7 +53,6 @@ function _cmdloop
 }
 
 # Set a breakpoint at given line number or list breakpoints
-
 function _setbp
 {
   local i
@@ -75,7 +72,6 @@ function _setbp
 }
 
 # List breakpoints and break conditions
-
 function _listbp
 {
   if [ -n "$_linebp" ]; then
@@ -83,8 +79,11 @@ function _listbp
   else
     _msg "No breakpoints have been set"
   fi
-  _msg "Break on condition:"
-  _msg "$_brcond"
+  if [ -n "$_brcond" ]; then
+    _msg "Break on condition: $_brcond"
+  else
+    _msg "No break condition have been set"
+  fi
 }
 
 function _clearbp
@@ -103,7 +102,6 @@ function _clearbp
 }
 
 # Set or clear a break condition
-
 function _setbc
 {
   if [ -n "$*" ]; then
@@ -130,9 +128,19 @@ function _at_linenumbp
   return 1
 }
 
+# See if _steps is valid integer
+function _is_steps_valid
+{
+  echo "$_steps" | grep -qP "^[1-9][0-9]*$" && {
+    return 0
+  } || {
+    _msg "Invalid step argument"
+    return 1
+  }
+}
+
 # Print out the shell script and mark the location of breakpoints
 # and the current line
-
 function _displayscript
 {
   local i=1 j=0 bp cl
@@ -150,7 +158,7 @@ function _displayscript
         cl=" "
       fi
 
-      echo "$i:$bp $cl ${_lines[$i]}"
+      printf "%3d:%s %s %s\n" $i "$bp" "$cl" "${_lines[$i]}"
       let i=$i+1
     done
   ) | more

@@ -25,6 +25,6 @@ _tmpdir="$_curdir/tmp"
 mkdir -p "$_tmpdir"
 _libdir="$_curdir"
 _debugfile="$_tmpdir/bashdb.$$"
-cat "$_libdir/bashdb.pre" "$_guineapig" > "$_debugfile"
+cat "$_libdir/bashdb.pre" <(sed '/^$/d' "$_guineapig") > "$_debugfile"
 exec bash "$_debugfile" "$_guineapig" "$_tmpdir" "$_libdir" "$@"
 
