@@ -25,6 +25,8 @@ _tmpdir="$_curdir/tmp"
 mkdir -p "$_tmpdir"
 _libdir="$_curdir"
 _debugfile="$_tmpdir/bashdb.$$"
-cat "$_libdir/bashdb.pre" <(sed '/^$/d' "$_guineapig") > "$_debugfile"
+sed -n '$p' "$_libdir/bashdb.pre" |
+  grep -q $(wc -l "$_libdir/bashdb.pre") || { echo Wrong LINENO in bashdb.pre; exit 1; }
+cat "$_libdir/bashdb.pre" "$_guineapig" > "$_debugfile"
 exec bash "$_debugfile" "$_guineapig" "$_tmpdir" "$_libdir" "$@"
 

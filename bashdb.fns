@@ -3,6 +3,8 @@
 function _steptrap
 {
   _curline=$1
+  _exitcode=$2
+
   (( $_curline < 0 )) && return # inside trap EXIT handler
   (( $_trace )) && _msg "$PS4 line $_curline: ${_lines[$_curline]}"
 
@@ -10,16 +12,20 @@ function _steptrap
     let _steps="$_steps - 1"
   fi
 
-  # First check to see if a line number breakpoint was reached.
+  if (( _onerror )) && [ ! "$_exitcode" == "0" ]; then
+    _msg "Command on line $(echo $(($_curline - 1))) exits with status $_exitcode"
+    _cmdloop
+
+  # Check to see if a line number breakpoint was reached.
   # If it was, then enter the debugger.
-  if _at_linenumbp; then
+  elif _at_linenumbp; then
     _msg "Reached breakpoint at line $_curline"
     _cmdloop
 
   # It wasn't, so chek whether a break condition exists and is true.
   # If it is, then enter the debugger.
   elif [ -n "$_brcond" ] && eval $_brcond; then
-    _msg "Break condition $_brcond true at line $_curline"
+    _msg "Break condition '$_brcond' is true at line $_curline"
     _cmdloop
 
   # It wasn't, so check if we are in step mode and the number of steps
@@ -37,17 +43,18 @@ function _cmdloop
   while read -e -p "bashdb> " cmd args; do
     case $cmd in
       \? | h ) _menu ;;                     # print command menu
-      bc ) _setbc $args ;;                  # set a break condition
-      bp ) _setbp $args ;;                  # set a breakpoint at the given line
-      cb ) _clearbp $args ;;                # clear one or all breakpoints
+      b  ) _setbp $args ;;                  # set a breakpoint at the given line or list breakpoints
+      db ) _clearbp $args ;;                # clear one or all breakpoints
+      bc ) _setbc $args ;;                  # set or display a break condition
       ds ) _displayscript ;;                # list the script and show the breakpoints
-      g ) return ;;                         # "go": start/resume execution of the script
-      q ) exit ;;                           # quit
-      s ) let _steps=${args:-1}             # single step N times (default = 1)
+      g  ) return ;;                        # "go": start/resume execution of the script
+      q  ) exit ;;                          # quit
+      s  ) let _steps=${args:-1}            # single step N times (default = 1)
           _is_steps_valid && return ;;
-      x ) _xtrace ;;                        # toggle execution trace
+      x  ) _xtrace ;;                       # toggle execution trace
+      er ) _xonerror ;;                     # toggle break on error
       !* ) eval ${cmd#!} $args ;;           # pass to the shell
-      * ) _msg "Invalid command: '$cmd'" ;;
+      *  ) _msg "Invalid command: '$cmd'" ;;
     esac
   done
 }
@@ -60,9 +67,13 @@ function _setbp
     _listbp
   elif [ $(echo $1 | grep '^[0-9]*') ]; then
     if [ -n "${_lines[$1]}" ]; then
-      _linebp=($(echo $( (for i in ${_linebp[*]} $1; do
-         echo $i; done) | sort -n) ))
-       _msg "Breakpoint set at line $1"
+      if echo "${_linebp[*]}" | grep -qP "\b$1\b"; then
+        _msg "Breakpoint at line $1 already set"
+      else
+        _linebp=($(echo $( (for i in ${_linebp[*]} $1; do
+           echo $i; done) | sort -n) ))
+         _msg "Breakpoint set at line $1"
+      fi
     else
       _msg "Breakpoints can only be set on non-blank lines"
     fi
@@ -71,7 +82,7 @@ function _setbp
   fi
 }
 
-# List breakpoints and break conditions
+# List breakpoints
 function _listbp
 {
   if [ -n "$_linebp" ]; then
@@ -79,37 +90,57 @@ function _listbp
   else
     _msg "No breakpoints have been set"
   fi
-  if [ -n "$_brcond" ]; then
-    _msg "Break on condition: $_brcond"
-  else
-    _msg "No break condition have been set"
-  fi
 }
 
 function _clearbp
 {
   local i
   if [ -z "$1" ]; then
-    unset _linebp[*]
-    _msg "All breakpoints have been cleared"
-  elif [ $(echo $1 | grep '^[0-9]*') ]; then
-    _linebp=($(echo $(for i in ${_linebp[*]}; do
-      if (( $1 != $i )); then echo $i; fi; done) ))
-    _msg "Breakpoint cleared at line $1"
+    if [ -n "${_linebp[*]}" ]; then
+      unset _linebp[*]
+      _msg "All breakpoints have been cleared"
+    else
+      _msg "No breakpoints have been set"
+    fi
   else
-    _msg "Please specify a numeric line number"
+    while [ -n "$1" ]; do
+     if echo $1 | grep -q '^[0-9]*$'; then
+       if echo "${_linebp[*]}" | grep -qP "\b$1\b"; then
+         _linebp=($(echo $(for i in ${_linebp[*]}; do
+           if (( $1 != $i )); then echo $i; fi; done) ))
+         _msg "Breakpoint cleared at line $1"
+       else
+         _msg "No breakpoint at line $1"
+       fi
+     else
+       _msg "Incorrect breakpoint line: $1"
+     fi
+     shift
+    done
   fi
 }
 
-# Set or clear a break condition
+# Set or display a break condition
 function _setbc
 {
   if [ -n "$*" ]; then
-    _brcond=$args
-    _msg "Break when true: $_brcond"
+    if [ ! "$*" == "-" ]; then
+      _brcond=$args
+      _msg "Break when true: $_brcond"
+    else
+      if [ -n "$_brcond" ]; then
+        _brcond=
+        _msg "Break condition cleared"
+      else
+        _msg "No break condition have been set"
+      fi
+    fi
   else
-    _brcond=
-    _msg "Break condition cleared"
+    if [ -n "$_brcond" ]; then
+      _msg "Break on condition: $_brcond"
+    else
+      _msg "No break condition have been set"
+    fi
   fi
 }
 
@@ -176,6 +207,18 @@ function _xtrace
   fi
 }
 
+# Toggle break on error on/off
+function _xonerror
+{
+  let _onerror="! $_onerror"
+  _msg "Break on error "
+  if (( $_onerror )); then
+    _msg "on"
+  else
+    _msg "off"
+  fi
+}
+
 # Print the passed arguments to Standard Error
 function _msg
 {
@@ -186,16 +229,17 @@ function _msg
 function _menu
 {
   _msg 'bashdb commands:
-    bp N        set breakpoint at line N
-    bp          list breakpoints and break condition
-    bc string   set break condition to string
-    bc          clear break condition
-    cb N        clear breakpoint at line N
-    cb          clear all breakpoints
+    b N         set breakpoint at line N
+    b           list breakpoints
+    db N        delete breakpoint at line N
+    db          delete all breakpoints
+    bc string   set break condition to string, '-' - clear condition
+    bc          show break condition
     ds          display the test script and breakpoints
     g           start/resume execution
     s [N]       execute N statements (default 1)
     x           toggle execution trace on/off
+    er          toggle break on error on/off
     h, ?        print this menu
     ! string    passes string to a shell
     q           quit'
