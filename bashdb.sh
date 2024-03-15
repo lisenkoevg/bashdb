@@ -23,7 +23,7 @@ shift
 
 _tmpdir="$_curdir/tmp"
 mkdir -p "$_tmpdir"
-_libdir=.
+_libdir="$_curdir"
 _debugfile="$_tmpdir/bashdb.$$"
 cat "$_libdir/bashdb.pre" "$_guineapig" > "$_debugfile"
 exec bash "$_debugfile" "$_guineapig" "$_tmpdir" "$_libdir" "$@"
